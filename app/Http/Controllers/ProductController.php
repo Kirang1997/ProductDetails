@@ -9,6 +9,7 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -142,6 +143,52 @@ class ProductController extends Controller
         // Return the list of products
         return response()->json(['message' => 'Product List','Data'=>$products],200);   
 
+    }
+    public function deleteProduct(Request $request){
+        try {
+            // Add validation
+            $validated = $request->validate([
+                'product_id' => 'required'
+            ], [
+                'product_id.required' => 'The Product id is required.',            
+            ]);
+            $product_id=$request->product_id;
+            $products = Product::with('images')->find($product_id);
+            
+
+            // Check if there are any products
+            if (!$products) {
+             return response()->json(['message' => 'No products found','Deleted'=>false], 404);
+            }else{
+         
+                 // Delete associated images
+                 foreach ($products->images as $image) {
+                    $filePath = public_path('storage/' . $image->path);
+
+                    if (is_file($filePath)) {
+                        // Delete the file
+                        unlink($filePath);
+                    } elseif (is_dir($filePath)) {
+                        // If it's a directory, delete the directory (recursively if necessary)
+                        rmdir($filePath);
+                    }
+                    $image->delete(); // Remove image record from the database
+                }
+                // Recreate the symbolic link
+                \Illuminate\Support\Facades\Artisan::call('storage:link');
+                DB::table('cart')->where('product_id', $product_id)->delete();
+                DB::table('productimages')->where('product_id', $product_id)->delete();
+                DB::table('product')->where('id', $product_id)->delete();
+                
+                return response()->json(['message' => 'products Deleted .','Deleted'=>true], 200);
+            }
+        }catch (ValidationException $e) {
+            // Return custom validation response
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors()  // This will contain the validation error messages
+            ], 422);
+        }
     }
 }
 
